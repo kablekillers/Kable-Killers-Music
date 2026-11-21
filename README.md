@@ -11,7 +11,10 @@ Kable Killers Music is a music addon for the Kable Killers app (and any Stremio-
 | SoundCloud | Millions of user-uploaded tracks | Search results |
 | Audius | Full tracks from independent artists | Trending + search results |
 | Live Radio (Radio Browser) | 30,000+ live internet radio stations; search by name or genre (e.g. "country", "ESPN", "jazz") | Top US stations + search results |
-| Concerts & Archive (Internet Archive) | Live concert recordings, old-time radio, public-domain music; each item lists every track | Search results |
+| Concerts & Archive (Internet Archive) | Archived concert recordings and other audio collections, with ordered album tracks | Search results |
+| Wikimedia Commons | Openly licensed or public-domain recordings (license varies by file) | Search results |
+| Audius Albums | Ordered albums and track lists from Audius | Search results |
+| YouTube (optional) | Official search for embeddable music videos; video plays in a visible YouTube player | Music Hub YouTube tab (not a Stremio audio stream) |
 
 ## Features
 
@@ -56,8 +59,14 @@ This repo includes a `render.yaml` blueprint.
 | `PORT` | Port to run on (default 5000) |
 | `AUDIUS_API_KEY` | Optional: free key from api.audius.co/plans if Audius starts requiring one |
 | `SC_CLIENT_ID` | Optional: fixed SoundCloud client ID (otherwise fetched automatically) |
+| `YOUTUBE_API_KEY` | Optional: official YouTube Data API v3 key; set as a Render secret. Without it the YouTube tab is unavailable. |
+| `PUBLIC_BASE_URL` | Optional public web URL for album track redirects; defaults to the Render address. |
 | `ADDON_LOGO_URL` | Optional: custom logo URL for the addon manifest |
 | `ADDON_BACKGROUND_URL` | Optional: custom background URL for the addon manifest |
+
+## Music Hub development (experimental)
+
+The Kable Killers Mobile Android test branch adds a Music Hub. Album queues use `/api/music/audius-album/:id` and `/api/music/album/:id`; Android plays the audio files sequentially. YouTube search uses `/api/music/youtube/search?q=...`, requires `YOUTUBE_API_KEY`, and sends the chosen video to a visible official YouTube embedded player. It does not strip video or expose YouTube audio URLs. These new features are **not deployed or verified on a device**. Spotify Free playback is not supported by the Spotify playback SDK. Installing the addon alone does not add the Music Hub; a compatible Kable Killers Mobile/TV build is required.
 
 By default the logo and background load from this repo's `client/public` folder on GitHub.
 
