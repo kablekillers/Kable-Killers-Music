@@ -320,3 +320,21 @@ export async function archiveStreams(identifier: string) {
     url: `${IA}/download/${encodeURIComponent(identifier)}/${f.name.split("/").map(encodeURIComponent).join("/")}`,
   }));
 }
+
+/**
+ * Ordered, playable tracks for a single Internet Archive item.
+ * These are individual recordings; Nuvio's Music Hub can queue them
+ * instead of presenting them as alternative stream qualities.
+ */
+export async function archiveAlbumTracks(identifier: string) {
+  if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(identifier)) return [];
+  const item = await iaItem(identifier);
+  if (!item) return [];
+  return iaTracks(item).map((file: any, index: number) => ({
+    id: `ia:${identifier}:${index + 1}`,
+    index: index + 1,
+    title: String(file.title || file.name.replace(/\\.[^.]+$/, "")),
+    durationSeconds: Number.isFinite(Number(file.length)) && Number(file.length) > 0 ? Math.round(Number(file.length)) : null,
+    url: `${IA}/download/${encodeURIComponent(identifier)}/${file.name.split("/").map(encodeURIComponent).join("/")}`,
+  }));
+}
