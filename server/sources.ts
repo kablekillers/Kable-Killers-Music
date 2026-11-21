@@ -316,13 +316,13 @@ function iaToMeta(doc: any) {
 }
 
 export async function archiveSearch(query: string) {
-  return cached(`ia:search2:${query}`, 3600 * 6, async () => {
+  return cached(`ia:search3:${query}`, 3600 * 6, async () => {
     try {
       // Build the query string by hand: archive.org needs literal "fl[]" keys
       const qs = new URLSearchParams();
-      qs.append("q", `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast)`);
+      qs.append("q", `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast OR oldtimeradio)`);
       for (const f of ["identifier", "title", "creator", "date", "year", "description"]) qs.append("fl[]", f);
-      qs.append("sort[]", "downloads desc");
+      // Archive search defaults to relevance: downloads sorting buried precise album matches.
       qs.append("rows", "50");
       qs.append("output", "json");
       const { data } = await http.get(`${IA}/advancedsearch.php?${qs.toString()}`);
