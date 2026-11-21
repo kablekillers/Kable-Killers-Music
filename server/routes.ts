@@ -5,7 +5,7 @@ import axios from "axios";
 import {
   audiusSearch, audiusTrending, audiusMeta, audiusStreams,
   radioSearch, radioTop, radioMeta, radioStreams,
-  archiveSearch, archiveMeta, archiveStreams,
+  archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
 import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
 import { createRequire } from "module";
@@ -308,6 +308,21 @@ export async function registerRoutes(
 ): Promise<Server> {
   const addonInterface = builder.getInterface();
   app.use(getRouter(addonInterface));
+
+  // Music Hub queue endpoint: one recording per playlist item, in album order.
+  app.get("/api/music/album/:identifier", async (req, res) => {
+    try {
+      const identifier = String(req.params.identifier || "");
+      if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(identifier)) {
+        return res.status(400).json({ error: "Invalid album identifier" });
+      }
+      const tracks = await archiveAlbumTracks(identifier);
+      return res.json({ id: `ia:${identifier}`, tracks });
+    } catch (error: any) {
+      console.error("[KK Music] Album queue error:", error?.message);
+      return res.status(502).json({ error: "Unable to load album tracks" });
+    }
+  });
 
   // Test Endpoint for debugging
   app.get('/api/test-scraper', async (req, res) => {
