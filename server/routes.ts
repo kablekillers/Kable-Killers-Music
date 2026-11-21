@@ -317,9 +317,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  const addonInterface = builder.getInterface();
-  app.use(getRouter(addonInterface));
-
+  // Register Music Hub HTTP APIs before the SDK router to avoid any fallback
+  // handlers in the SDK intercepting these paths.
   // Music Hub queue endpoint: one recording per playlist item, in album order.
   app.get("/api/music/album/:identifier", async (req, res) => {
     try {
@@ -397,6 +396,9 @@ export async function registerRoutes(
       res.status(500).json({ error: error.message, status: 'error' });
     }
   });
+
+  const addonInterface = builder.getInterface();
+  app.use(getRouter(addonInterface));
 
   return httpServer;
 }
