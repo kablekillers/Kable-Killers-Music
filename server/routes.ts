@@ -34,7 +34,7 @@ async function getSCClientId() {
       if (key) {
         currentSCKey = key;
         console.log("[KK Music] Scraped and cached SoundCloud Client ID:", currentSCKey);
-        return currentSCKey;
+        return currentSCKey || null;
       }
       
       throw new Error("Scraper returned no key");
