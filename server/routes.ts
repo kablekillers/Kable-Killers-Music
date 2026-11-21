@@ -9,7 +9,7 @@ import {
   archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
 import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
-import { searchYouTubeMusic } from "./youtube";
+import { searchYouTubeMusic, searchYouTube, trendingYouTube, channelYouTube } from "./youtube";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -381,6 +381,26 @@ export async function registerRoutes(
       return res.status(502).json({ error: "YouTube search unavailable" });
     }
   });
+
+  // YouTube tab in Kable Killers Mobile: official Data API search, trending and channels.
+  const youtubeRoute = (load: (req: any) => Promise<unknown>) => async (req: any, res: any) => {
+    if (!process.env.YOUTUBE_API_KEY?.trim()) {
+      return res.status(503).json({ error: "YouTube is not configured" });
+    }
+    try {
+      return res.json(await load(req));
+    } catch (e: any) {
+      console.error("[KK Music] YouTube tab:", e?.message);
+      return res.status(502).json({ error: "YouTube unavailable" });
+    }
+  };
+  const pageToken = (req: any) => (typeof req.query.pageToken === "string" ? req.query.pageToken.slice(0, 100) : undefined);
+  app.get("/api/youtube/search", youtubeRoute((req) =>
+    searchYouTube(String(req.query.q || ""), pageToken(req))));
+  app.get("/api/youtube/trending", youtubeRoute((req) =>
+    trendingYouTube(String(req.query.category || "all").toLowerCase(), String(req.query.region || "US").toUpperCase(), pageToken(req))));
+  app.get("/api/youtube/channel/:channelId", youtubeRoute((req) =>
+    channelYouTube(String(req.params.channelId || ""), pageToken(req))));
 
   // Test Endpoint for debugging
   app.get('/api/test-scraper', async (req, res) => {
