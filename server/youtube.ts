@@ -2,6 +2,11 @@ import axios from "axios";
 
 const YT_API = "https://www.googleapis.com/youtube/v3/search";
 const yt = axios.create({ timeout: 12000 });
+// Google search.list consumes 100 quota units per request, so reuse searches.
+// This cache is process-local and safe to lose on a Render restart.
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 150;
+const searchCache = new Map<string, { until: number; results: YouTubeMusicResult[] }>();
 
 export type YouTubeMusicResult = {
   videoId: string;
@@ -19,6 +24,10 @@ export async function searchYouTubeMusic(query: string): Promise<YouTubeMusicRes
   if (!key) throw new Error("YouTube search is not configured");
   const q = query.trim().slice(0, 160);
   if (!q) return [];
+  const cacheKey = q.toLocaleLowerCase("en");
+  const cached = searchCache.get(cacheKey);
+  if (cached && cached.until > Date.now()) return cached.results;
+  if (cached) searchCache.delete(cacheKey);
   const response = await yt.get(YT_API, {
     params: {
       part: "snippet",
@@ -30,7 +39,7 @@ export async function searchYouTubeMusic(query: string): Promise<YouTubeMusicRes
       safeSearch: "moderate",
     },
   });
-  return (response.data?.items || [])
+  const results: YouTubeMusicResult[] = (response.data?.items || [])
     .map((item: any) => ({
       videoId: String(item.id?.videoId || ""),
       title: String(item.snippet?.title || ""),
@@ -40,4 +49,9 @@ export async function searchYouTubeMusic(query: string): Promise<YouTubeMusicRes
     .filter((item: YouTubeMusicResult) =>
       /^[a-zA-Z0-9_-]{11}$/.test(item.videoId) && item.title.length > 0
     );
+  if (searchCache.size >= MAX_CACHE_ENTRIES) {
+    searchCache.delete(searchCache.keys().next().value!);
+  }
+  searchCache.set(cacheKey, { until: Date.now() + CACHE_TTL_MS, results });
+  return results;
 }
