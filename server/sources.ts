@@ -119,6 +119,74 @@ export async function audiusStreams(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Audius albums & playlists (album metadata, ordered track playback)
+// ---------------------------------------------------------------------------
+function audiusAlbumToMeta(p: any) {
+  const artwork = p.artwork?.["1000x1000"] || p.artwork?.["480x480"] ||
+      p.artwork?.["150x150"] || p.user?.profile_picture?.["480x480"] || "";
+  return {
+    id: `audiuspl:${p.id}`,
+    type: "music",
+    name: p.user?.name ? `${p.playlist_name} — ${p.user.name}` : p.playlist_name,
+    poster: artwork,
+    background: artwork,
+    description: p.description || (p.is_album ? "Audius Album" : "Audius Playlist"),
+    genres: ["Album"],
+  };
+}
+export async function audiusAlbumSearch(query: string) {
+  if (!query.trim()) return [];
+  return cached(`audius:album-search:${query}`, 3600, async () => {
+    try {
+      const { data } = await http.get(`${AUDIUS_BASE}/playlists/search`, {
+        params: { query, app_name: AUDIUS_APP, limit: 50 },
+        headers: audiusHeaders(),
+      });
+      return (data?.data || [])
+        .filter((p: any) => p.is_album === true && p.id && p.playlist_name)
+        .map(audiusAlbumToMeta);
+    } catch (e: any) {
+      console.error("[KK Music] Audius album search error:", e.message);
+      return [];
+    }
+  });
+}
+export async function audiusAlbumMeta(id: string) {
+  if (!/^[a-zA-Z0-9]+$/.test(id)) return null;
+  try {
+    const { data } = await http.get(`${AUDIUS_BASE}/playlists/${id}`, {
+      params: { app_name: AUDIUS_APP }, headers: audiusHeaders(),
+    });
+    const p = Array.isArray(data?.data) ? data.data[0] : data?.data;
+    return p ? audiusAlbumToMeta(p) : null;
+  } catch (e: any) {
+    console.error("[KK Music] Audius album metadata error:", e.message);
+    return null;
+  }
+}
+export async function audiusAlbumTracks(id: string) {
+  if (!/^[a-zA-Z0-9]+$/.test(id)) return [];
+  try {
+    const { data } = await http.get(`${AUDIUS_BASE}/playlists/${id}/tracks`, {
+      params: { app_name: AUDIUS_APP }, headers: audiusHeaders(),
+    });
+    return (data?.data || [])
+      .filter((t: any) => t.is_streamable !== false && t.id)
+      .slice(0, 100)
+      .map((t: any, i: number) => ({
+        id: `audius:${t.id}`,
+        index: i + 1,
+        title: t.user?.name ? `${t.title} — ${t.user.name}` : t.title,
+        durationSeconds: Number.isFinite(Number(t.duration)) ? Number(t.duration) : null,
+        trackId: t.id,
+      }));
+  } catch (e: any) {
+    console.error("[KK Music] Audius album track lookup:", e.message);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Radio Browser (live internet radio)
 // ---------------------------------------------------------------------------
 const RADIO_SERVERS = [
