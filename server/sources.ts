@@ -406,3 +406,68 @@ export async function archiveAlbumTracks(identifier: string) {
     url: `${IA}/download/${encodeURIComponent(identifier)}/${file.name.split("/").map(encodeURIComponent).join("/")}`,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Music home (Kable Killers Mobile Music tab): artwork rows like a streaming app.
+// ---------------------------------------------------------------------------
+
+export type MusicHomeSection = { title: string; kind: "tracks" | "albums" | "radio"; items: any[] };
+export type MusicHomeArtist = { name: string; handle: string; image: string };
+
+async function audiusList(path: string, params: Record<string, any>) {
+  const { data } = await http.get(`${AUDIUS_BASE}${path}`, {
+    params: { app_name: AUDIUS_APP, ...params },
+    headers: audiusHeaders(),
+  });
+  return data?.data || [];
+}
+
+const HOME_GENRES: Array<[string, string]> = [
+  ["Hip-Hop & Rap", "Hip-Hop/Rap"],
+  ["Electronic", "Electronic"],
+  ["Pop", "Pop"],
+  ["R&B & Soul", "R&B/Soul"],
+  ["Chill & Lo-Fi", "Lo-Fi"],
+  ["Alternative", "Alternative"],
+  ["Rock", "Rock"],
+  ["Country", "Country"],
+];
+
+export async function musicHome(): Promise<{ sections: MusicHomeSection[]; artists: MusicHomeArtist[] }> {
+  return cached("music:home:v1", 3600, async () => {
+    const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try { return await fn(); } catch (e: any) { console.error("[KK Music] home:", e?.message); return fallback; }
+    };
+    const [trending, playlists, underground, radio, ...genres] = await Promise.all([
+      safe(() => audiusList("/tracks/trending", { time: "week", limit: 30 }), [] as any[]),
+      safe(() => audiusList("/playlists/trending", { time: "week", limit: 20 }), [] as any[]),
+      safe(() => audiusList("/tracks/trending/underground", { limit: 20 }), [] as any[]),
+      safe(() => radioTop(), [] as any[]),
+      ...HOME_GENRES.map(([, genre]) =>
+        safe(() => audiusList("/tracks/trending", { time: "week", genre, limit: 15 }), [] as any[])),
+    ]);
+    const tracks = (list: any[]) => list.filter((t: any) => t?.is_streamable !== false).map(audiusToMeta);
+    const sections: MusicHomeSection[] = [
+      { title: "Today's biggest hits", kind: "tracks", items: tracks(trending) },
+      { title: "Trending playlists", kind: "albums", items: playlists.map(audiusAlbumToMeta) },
+      { title: "Live radio", kind: "radio", items: (radio as any[]).slice(0, 20) },
+      ...HOME_GENRES.map(([title], i) => ({ title, kind: "tracks" as const, items: tracks(genres[i] as any[]) })),
+      { title: "Fresh from the underground", kind: "tracks", items: tracks(underground) },
+    ].filter((s) => s.items.length > 0);
+
+    const seen = new Set<string>();
+    const artists: MusicHomeArtist[] = [];
+    for (const t of trending as any[]) {
+      const u = t?.user;
+      if (!u?.name || seen.has(u.id)) continue;
+      seen.add(u.id);
+      artists.push({
+        name: u.name,
+        handle: u.handle ? `@${u.handle}` : "",
+        image: u.profile_picture?.["480x480"] || u.profile_picture?.["150x150"] || "",
+      });
+      if (artists.length >= 12) break;
+    }
+    return { sections, artists };
+  });
+}
