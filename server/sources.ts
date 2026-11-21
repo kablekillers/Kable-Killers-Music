@@ -248,19 +248,20 @@ function iaToMeta(doc: any) {
 }
 
 export async function archiveSearch(query: string) {
-  return cached(`ia:search:${query}`, 3600 * 6, async () => {
+  return cached(`ia:search2:${query}`, 3600 * 6, async () => {
     try {
-      const { data } = await http.get(`${IA}/advancedsearch.php`, {
-        params: {
-          q: `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast)`,
-          "fl[]": ["identifier", "title", "creator", "date", "year", "description"],
-          "sort[]": "downloads desc",
-          rows: 50,
-          output: "json",
-        },
-        paramsSerializer: { indexes: null },
-      });
-      return (data?.response?.docs || []).map(iaToMeta);
+      // Build the query string by hand: archive.org needs literal "fl[]" keys
+      const qs = new URLSearchParams();
+      qs.append("q", `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast)`);
+      for (const f of ["identifier", "title", "creator", "date", "year", "description"]) qs.append("fl[]", f);
+      qs.append("sort[]", "downloads desc");
+      qs.append("rows", "50");
+      qs.append("output", "json");
+      const { data } = await http.get(`${IA}/advancedsearch.php?${qs.toString()}`);
+      return (data?.response?.docs || [])
+        .filter((d: any) => d.identifier)
+        .map((d: any) => ({ ...d, title: d.title || d.identifier }))
+        .map(iaToMeta);
     } catch (e: any) {
       console.error("[KK Music] Archive search error:", e.message);
       return [];
