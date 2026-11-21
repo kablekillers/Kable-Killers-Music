@@ -7,6 +7,7 @@ import {
   radioSearch, radioTop, radioMeta, radioStreams,
   archiveSearch, archiveMeta, archiveStreams,
 } from "./sources";
+import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -60,9 +61,9 @@ const ADDON_BACKGROUND =
 // Stremio Manifest
 const manifest = {
   id: "org.kablekillers.music",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "Kable Killers Music",
-  description: "Search and stream music right inside Kable Killers: SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts.",
+  description: "Search and stream music right inside Kable Killers: SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts, and Wikimedia Commons recordings.",
   logo: ADDON_LOGO,
   icon: ADDON_LOGO,
   background: ADDON_BACKGROUND,
@@ -89,12 +90,18 @@ const manifest = {
     },
     {
       type: "music",
+      id: "kk_commons",
+      name: "Open Music & Recordings",
+      extra: [{ name: "search", isRequired: true }]
+    },
+    {
+      type: "music",
       id: "kk_archive",
       name: "Concerts & Archive",
       extra: [{ name: "search", isRequired: true }]
     }
   ],
-  idPrefixes: ["sc:", "audius:", "radio:", "ia:"]
+  idPrefixes: ["sc:", "audius:", "radio:", "ia:", "commons:"]
 };
 
 const builder = new addonBuilder(manifest);
@@ -150,6 +157,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
     const q = (extra?.search || "").trim();
     if (id === "kk_audius") return { metas: q ? await audiusSearch(q) : await audiusTrending(), cacheMaxAge: 3600 };
     if (id === "kk_radio") return { metas: q ? await radioSearch(q) : await radioTop(), cacheMaxAge: 3600 };
+    if (id === "kk_commons") return { metas: q ? await commonsSearch(q) : [], cacheMaxAge: 3600 };
     if (id === "kk_archive") return { metas: q ? await archiveSearch(q) : [], cacheMaxAge: 3600 };
 
     let items = [];
@@ -176,6 +184,7 @@ builder.defineMetaHandler(async ({ type, id }: any) => {
   const rest = id.slice(id.indexOf(":") + 1);
   if (id.startsWith("audius:")) return { meta: await audiusMeta(rest) };
   if (id.startsWith("radio:")) return { meta: await radioMeta(rest) };
+  if (id.startsWith("commons:")) return { meta: await commonsMeta(rest) };
   if (id.startsWith("ia:")) return { meta: await archiveMeta(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
@@ -212,6 +221,7 @@ builder.defineStreamHandler(async ({ type, id }: any) => {
   const rest = id.slice(id.indexOf(":") + 1);
   if (id.startsWith("audius:")) return { streams: await audiusStreams(rest) };
   if (id.startsWith("radio:")) return { streams: await radioStreams(rest) };
+  if (id.startsWith("commons:")) return { streams: await commonsStreams(rest) };
   if (id.startsWith("ia:")) return { streams: await archiveStreams(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
