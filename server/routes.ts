@@ -342,7 +342,7 @@ export async function registerRoutes(
     }
     const tracks = await audiusAlbumTracks(identifier);
     const base = (process.env.PUBLIC_BASE_URL || "https://kable-killers-music.onrender.com").replace(new RegExp("/$"), "");
-    return res.json({ id: `audiuspl:${identifier}`, tracks: tracks.map(t => ({
+    return res.json({ id: `audiuspl:${identifier}`, tracks: tracks.map((t: { trackId: string; [key: string]: any }) => ({
       ...t,
       url: `${base}/api/music/audius-track/${encodeURIComponent(String(t.trackId))}`,
     })) });
