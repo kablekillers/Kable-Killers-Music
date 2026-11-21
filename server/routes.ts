@@ -4,9 +4,12 @@ import { storage } from "./storage";
 import axios from "axios";
 import {
   audiusSearch, audiusTrending, audiusMeta, audiusStreams,
+  audiusAlbumSearch, audiusAlbumMeta, audiusAlbumTracks,
   radioSearch, radioTop, radioMeta, radioStreams,
-  archiveSearch, archiveMeta, archiveStreams,
+  archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
+import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
+import { searchYouTubeMusic } from "./youtube";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -33,7 +36,7 @@ async function getSCClientId() {
       if (key) {
         currentSCKey = key;
         console.log("[KK Music] Scraped and cached SoundCloud Client ID:", currentSCKey);
-        return currentSCKey;
+        return currentSCKey || null;
       }
       
       throw new Error("Scraper returned no key");
@@ -60,9 +63,9 @@ const ADDON_BACKGROUND =
 // Stremio Manifest
 const manifest = {
   id: "org.kablekillers.music",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "Kable Killers Music",
-  description: "Search and stream music right inside Kable Killers: SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts.",
+  description: "Search and stream music right inside Kable Killers: SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts, and Wikimedia Commons recordings.",
   logo: ADDON_LOGO,
   icon: ADDON_LOGO,
   background: ADDON_BACKGROUND,
@@ -89,12 +92,24 @@ const manifest = {
     },
     {
       type: "music",
+      id: "kk_audius_albums",
+      name: "Audius Albums",
+      extra: [{ name: "search", isRequired: true }]
+    },
+    {
+      type: "music",
+      id: "kk_commons",
+      name: "Open Music & Recordings",
+      extra: [{ name: "search", isRequired: true }]
+    },
+    {
+      type: "music",
       id: "kk_archive",
       name: "Concerts & Archive",
       extra: [{ name: "search", isRequired: true }]
     }
   ],
-  idPrefixes: ["sc:", "audius:", "radio:", "ia:"]
+  idPrefixes: ["sc:", "audius:", "audiuspl:", "radio:", "ia:", "commons:"]
 };
 
 const builder = new addonBuilder(manifest);
@@ -150,6 +165,8 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
     const q = (extra?.search || "").trim();
     if (id === "kk_audius") return { metas: q ? await audiusSearch(q) : await audiusTrending(), cacheMaxAge: 3600 };
     if (id === "kk_radio") return { metas: q ? await radioSearch(q) : await radioTop(), cacheMaxAge: 3600 };
+    if (id === "kk_audius_albums") return { metas: q ? await audiusAlbumSearch(q) : [], cacheMaxAge: 3600 };
+    if (id === "kk_commons") return { metas: q ? await commonsSearch(q) : [], cacheMaxAge: 3600 };
     if (id === "kk_archive") return { metas: q ? await archiveSearch(q) : [], cacheMaxAge: 3600 };
 
     let items = [];
@@ -174,8 +191,10 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
 builder.defineMetaHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Meta Request: type=${type}, id=${id}`);
   const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audiuspl:")) return { meta: await audiusAlbumMeta(rest) };
   if (id.startsWith("audius:")) return { meta: await audiusMeta(rest) };
   if (id.startsWith("radio:")) return { meta: await radioMeta(rest) };
+  if (id.startsWith("commons:")) return { meta: await commonsMeta(rest) };
   if (id.startsWith("ia:")) return { meta: await archiveMeta(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
@@ -210,8 +229,10 @@ builder.defineMetaHandler(async ({ type, id }: any) => {
 builder.defineStreamHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Stream Request: type=${type}, id=${id}`);
   const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audiuspl:")) return { streams: [] }; // Album tracks are available from the queue endpoint.
   if (id.startsWith("audius:")) return { streams: await audiusStreams(rest) };
   if (id.startsWith("radio:")) return { streams: await radioStreams(rest) };
+  if (id.startsWith("commons:")) return { streams: await commonsStreams(rest) };
   if (id.startsWith("ia:")) return { streams: await archiveStreams(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
@@ -296,8 +317,70 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  const addonInterface = builder.getInterface();
-  app.use(getRouter(addonInterface));
+  // Register Music Hub HTTP APIs before the SDK router to avoid any fallback
+  // handlers in the SDK intercepting these paths.
+  // Music Hub queue endpoint: one recording per playlist item, in album order.
+  app.get("/api/music/album/:identifier", async (req, res) => {
+    try {
+      const identifier = String(req.params.identifier || "");
+      if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(identifier)) {
+        return res.status(400).json({ error: "Invalid album identifier" });
+      }
+      const tracks = await archiveAlbumTracks(identifier);
+      return res.json({ id: `ia:${identifier}`, tracks });
+    } catch (error: any) {
+      console.error("[KK Music] Album queue error:", error?.message);
+      return res.status(502).json({ error: "Unable to load album tracks" });
+    }
+  });
+
+  // Albums from the official Audius catalog (sequential playback in Music Hub).
+  app.get("/api/music/audius-album/:identifier", async (req, res) => {
+    const identifier = String(req.params.identifier || "");
+    if (!/^[a-zA-Z0-9]{1,200}$/.test(identifier)) {
+      return res.status(400).json({ error: "Invalid album identifier" });
+    }
+    const tracks = await audiusAlbumTracks(identifier);
+    const base = (process.env.PUBLIC_BASE_URL || "https://kable-killers-music.onrender.com").replace(new RegExp("/$"), "");
+    return res.json({ id: `audiuspl:${identifier}`, tracks: tracks.map((t: { trackId: string; [key: string]: any }) => ({
+      ...t,
+      url: `${base}/api/music/audius-track/${encodeURIComponent(String(t.trackId))}`,
+    })) });
+  });
+
+  // Resolve Audius redirects with optional API credentials server-side.
+  // No audio files are downloaded or served from our server.
+  app.get("/api/music/audius-track/:identifier", async (req, res) => {
+    const identifier = String(req.params.identifier || "");
+    if (!/^[a-zA-Z0-9]{1,200}$/.test(identifier)) {
+      return res.status(400).json({ error: "Invalid track identifier" });
+    }
+    try {
+      const streams = await audiusStreams(identifier);
+      const url = streams[0]?.url;
+      if (!url || !url.startsWith("https://")) return res.sendStatus(502);
+      return res.redirect(302, url);
+    } catch (e: any) {
+      console.error("[KK Music] Audius track redirect error:", e?.message);
+      return res.sendStatus(502);
+    }
+  });
+
+  // Search YouTube through its official Data API. Video playback stays in the
+  // official embedded YouTube player in Android (not a Stremio audio stream).
+  app.get("/api/music/youtube/search", async (req, res) => {
+    const query = String(req.query.q || "").trim().slice(0, 160);
+    if (!query) return res.json({ results: [] });
+    if (!process.env.YOUTUBE_API_KEY?.trim()) {
+      return res.status(503).json({ error: "YouTube search is not configured" });
+    }
+    try {
+      return res.json({ results: await searchYouTubeMusic(query) });
+    } catch (e: any) {
+      console.error("[KK Music] YouTube search:", e?.message);
+      return res.status(502).json({ error: "YouTube search unavailable" });
+    }
+  });
 
   // Test Endpoint for debugging
   app.get('/api/test-scraper', async (req, res) => {
@@ -313,6 +396,9 @@ export async function registerRoutes(
       res.status(500).json({ error: error.message, status: 'error' });
     }
   });
+
+  const addonInterface = builder.getInterface();
+  app.use(getRouter(addonInterface));
 
   return httpServer;
 }

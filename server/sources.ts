@@ -119,6 +119,74 @@ export async function audiusStreams(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Audius albums & playlists (album metadata, ordered track playback)
+// ---------------------------------------------------------------------------
+function audiusAlbumToMeta(p: any) {
+  const artwork = p.artwork?.["1000x1000"] || p.artwork?.["480x480"] ||
+      p.artwork?.["150x150"] || p.user?.profile_picture?.["480x480"] || "";
+  return {
+    id: `audiuspl:${p.id}`,
+    type: "music",
+    name: p.user?.name ? `${p.playlist_name} — ${p.user.name}` : p.playlist_name,
+    poster: artwork,
+    background: artwork,
+    description: p.description || (p.is_album ? "Audius Album" : "Audius Playlist"),
+    genres: ["Album"],
+  };
+}
+export async function audiusAlbumSearch(query: string) {
+  if (!query.trim()) return [];
+  return cached(`audius:album-search:${query}`, 3600, async () => {
+    try {
+      const { data } = await http.get(`${AUDIUS_BASE}/playlists/search`, {
+        params: { query, app_name: AUDIUS_APP, limit: 50 },
+        headers: audiusHeaders(),
+      });
+      return (data?.data || [])
+        .filter((p: any) => p.is_album === true && p.id && p.playlist_name)
+        .map(audiusAlbumToMeta);
+    } catch (e: any) {
+      console.error("[KK Music] Audius album search error:", e.message);
+      return [];
+    }
+  });
+}
+export async function audiusAlbumMeta(id: string) {
+  if (!/^[a-zA-Z0-9]+$/.test(id)) return null;
+  try {
+    const { data } = await http.get(`${AUDIUS_BASE}/playlists/${id}`, {
+      params: { app_name: AUDIUS_APP }, headers: audiusHeaders(),
+    });
+    const p = Array.isArray(data?.data) ? data.data[0] : data?.data;
+    return p ? audiusAlbumToMeta(p) : null;
+  } catch (e: any) {
+    console.error("[KK Music] Audius album metadata error:", e.message);
+    return null;
+  }
+}
+export async function audiusAlbumTracks(id: string) {
+  if (!/^[a-zA-Z0-9]+$/.test(id)) return [];
+  try {
+    const { data } = await http.get(`${AUDIUS_BASE}/playlists/${id}/tracks`, {
+      params: { app_name: AUDIUS_APP }, headers: audiusHeaders(),
+    });
+    return (data?.data || [])
+      .filter((t: any) => t.is_streamable !== false && t.id)
+      .slice(0, 100)
+      .map((t: any, i: number) => ({
+        id: `audius:${t.id}`,
+        index: i + 1,
+        title: t.user?.name ? `${t.title} — ${t.user.name}` : t.title,
+        durationSeconds: Number.isFinite(Number(t.duration)) ? Number(t.duration) : null,
+        trackId: t.id,
+      }));
+  } catch (e: any) {
+    console.error("[KK Music] Audius album track lookup:", e.message);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Radio Browser (live internet radio)
 // ---------------------------------------------------------------------------
 const RADIO_SERVERS = [
@@ -248,13 +316,13 @@ function iaToMeta(doc: any) {
 }
 
 export async function archiveSearch(query: string) {
-  return cached(`ia:search2:${query}`, 3600 * 6, async () => {
+  return cached(`ia:search3:${query}`, 3600 * 6, async () => {
     try {
       // Build the query string by hand: archive.org needs literal "fl[]" keys
       const qs = new URLSearchParams();
-      qs.append("q", `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast)`);
+      qs.append("q", `(${query}) AND mediatype:(audio) AND NOT collection:(podcasts OR audio_podcast OR oldtimeradio)`);
       for (const f of ["identifier", "title", "creator", "date", "year", "description"]) qs.append("fl[]", f);
-      qs.append("sort[]", "downloads desc");
+      // Archive search defaults to relevance: downloads sorting buried precise album matches.
       qs.append("rows", "50");
       qs.append("output", "json");
       const { data } = await http.get(`${IA}/advancedsearch.php?${qs.toString()}`);
@@ -318,5 +386,23 @@ export async function archiveStreams(identifier: string) {
     name: "KK Music\nArchive",
     title: `${String(i + 1).padStart(2, "0")}. ${f.title || f.name.replace(/\.[^.]+$/, "")}${f.length ? ` (${Math.round(Number(f.length) / 60) || "<1"} min)` : ""}`,
     url: `${IA}/download/${encodeURIComponent(identifier)}/${f.name.split("/").map(encodeURIComponent).join("/")}`,
+  }));
+}
+
+/**
+ * Ordered, playable tracks for a single Internet Archive item.
+ * These are individual recordings; Nuvio's Music Hub can queue them
+ * instead of presenting them as alternative stream qualities.
+ */
+export async function archiveAlbumTracks(identifier: string) {
+  if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(identifier)) return [];
+  const item = await iaItem(identifier);
+  if (!item) return [];
+  return iaTracks(item).map((file: any, index: number) => ({
+    id: `ia:${identifier}:${index + 1}`,
+    index: index + 1,
+    title: String(file.title || file.name.replace(/\\.[^.]+$/, "")),
+    durationSeconds: Number.isFinite(Number(file.length)) && Number(file.length) > 0 ? Math.round(Number(file.length)) : null,
+    url: `${IA}/download/${encodeURIComponent(identifier)}/${file.name.split("/").map(encodeURIComponent).join("/")}`,
   }));
 }
