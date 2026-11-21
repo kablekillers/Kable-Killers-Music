@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import axios from "axios";
 import {
   audiusSearch, audiusTrending, audiusMeta, audiusStreams,
+  audiusAlbumSearch, audiusAlbumMeta, audiusAlbumTracks,
   radioSearch, radioTop, radioMeta, radioStreams,
   archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
@@ -90,6 +91,12 @@ const manifest = {
     },
     {
       type: "music",
+      id: "kk_audius_albums",
+      name: "Audius Albums",
+      extra: [{ name: "search", isRequired: true }]
+    },
+    {
+      type: "music",
       id: "kk_commons",
       name: "Open Music & Recordings",
       extra: [{ name: "search", isRequired: true }]
@@ -101,7 +108,7 @@ const manifest = {
       extra: [{ name: "search", isRequired: true }]
     }
   ],
-  idPrefixes: ["sc:", "audius:", "radio:", "ia:", "commons:"]
+  idPrefixes: ["sc:", "audius:", "audiuspl:", "radio:", "ia:", "commons:"]
 };
 
 const builder = new addonBuilder(manifest);
@@ -157,6 +164,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
     const q = (extra?.search || "").trim();
     if (id === "kk_audius") return { metas: q ? await audiusSearch(q) : await audiusTrending(), cacheMaxAge: 3600 };
     if (id === "kk_radio") return { metas: q ? await radioSearch(q) : await radioTop(), cacheMaxAge: 3600 };
+    if (id === "kk_audius_albums") return { metas: q ? await audiusAlbumSearch(q) : [], cacheMaxAge: 3600 };
     if (id === "kk_commons") return { metas: q ? await commonsSearch(q) : [], cacheMaxAge: 3600 };
     if (id === "kk_archive") return { metas: q ? await archiveSearch(q) : [], cacheMaxAge: 3600 };
 
@@ -182,6 +190,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
 builder.defineMetaHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Meta Request: type=${type}, id=${id}`);
   const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audiuspl:")) return { meta: await audiusAlbumMeta(rest) };
   if (id.startsWith("audius:")) return { meta: await audiusMeta(rest) };
   if (id.startsWith("radio:")) return { meta: await radioMeta(rest) };
   if (id.startsWith("commons:")) return { meta: await commonsMeta(rest) };
@@ -219,6 +228,7 @@ builder.defineMetaHandler(async ({ type, id }: any) => {
 builder.defineStreamHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Stream Request: type=${type}, id=${id}`);
   const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audiuspl:")) return { streams: [] }; // Album tracks are available from the queue endpoint.
   if (id.startsWith("audius:")) return { streams: await audiusStreams(rest) };
   if (id.startsWith("radio:")) return { streams: await radioStreams(rest) };
   if (id.startsWith("commons:")) return { streams: await commonsStreams(rest) };
@@ -321,6 +331,38 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[KK Music] Album queue error:", error?.message);
       return res.status(502).json({ error: "Unable to load album tracks" });
+    }
+  });
+
+  // Albums from the official Audius catalog (sequential playback in Music Hub).
+  app.get("/api/music/audius-album/:identifier", async (req, res) => {
+    const identifier = String(req.params.identifier || "");
+    if (!/^[a-zA-Z0-9]{1,200}$/.test(identifier)) {
+      return res.status(400).json({ error: "Invalid album identifier" });
+    }
+    const tracks = await audiusAlbumTracks(identifier);
+    const base = (process.env.PUBLIC_BASE_URL || "https://kable-killers-music.onrender.com").replace(/\\/$/, "");
+    return res.json({ id: `audiuspl:${identifier}`, tracks: tracks.map(t => ({
+      ...t,
+      url: `${base}/api/music/audius-track/${encodeURIComponent(String(t.trackId))}`,
+    })) });
+  });
+
+  // Resolve Audius redirects with optional API credentials server-side.
+  // No audio files are downloaded or served from our server.
+  app.get("/api/music/audius-track/:identifier", async (req, res) => {
+    const identifier = String(req.params.identifier || "");
+    if (!/^[a-zA-Z0-9]{1,200}$/.test(identifier)) {
+      return res.status(400).json({ error: "Invalid track identifier" });
+    }
+    try {
+      const streams = await audiusStreams(identifier);
+      const url = streams[0]?.url;
+      if (!url || !url.startsWith("https://")) return res.sendStatus(502);
+      return res.redirect(302, url);
+    } catch (e: any) {
+      console.error("[KK Music] Audius track redirect error:", e?.message);
+      return res.sendStatus(502);
     }
   });
 
