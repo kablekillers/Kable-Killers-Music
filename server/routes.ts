@@ -5,7 +5,7 @@ import axios from "axios";
 import {
   audiusSearch, audiusTrending, audiusMeta, audiusStreams,
   audiusAlbumSearch, audiusAlbumMeta, audiusAlbumTracks,
-  radioSearch, radioTop, radioMeta, radioStreams,
+  radioSearch, radioTop, radioMeta, radioStreams, musicHome,
   archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
 import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
@@ -379,6 +379,16 @@ export async function registerRoutes(
     } catch (e: any) {
       console.error("[KK Music] YouTube search:", e?.message);
       return res.status(502).json({ error: "YouTube search unavailable" });
+    }
+  });
+
+  // Music tab home rows in Kable Killers Mobile.
+  app.get("/api/music/home", async (_req, res) => {
+    try {
+      return res.json(await musicHome());
+    } catch (e: any) {
+      console.error("[KK Music] music home:", e?.message);
+      return res.status(502).json({ sections: [], artists: [] });
     }
   });
 
