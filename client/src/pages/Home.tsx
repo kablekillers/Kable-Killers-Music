@@ -40,7 +40,7 @@ export default function Home() {
           <div className="h-2 w-24 bg-primary mx-auto mb-6" />
 
           <p className="text-xl md:text-2xl font-light text-muted-foreground max-w-2xl mx-auto">
-            Search and stream music right inside Kable Killers. Find any track, see the artwork and details, and hit play.
+            Search and stream music right inside Kable Killers: tracks, live radio and full concerts, all in one place.
           </p>
           
           {isLoading ? (
@@ -62,7 +62,7 @@ export default function Home() {
           <FeatureCard 
             icon={<Music className="w-6 h-6" />}
             title="Music"
-            description="Millions of tracks, searchable right from the Kable Killers app."
+            description="SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts."
           />
           <FeatureCard 
             icon={<Zap className="w-6 h-6" />}

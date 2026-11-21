@@ -2,6 +2,11 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import axios from "axios";
+import {
+  audiusSearch, audiusTrending, audiusMeta, audiusStreams,
+  radioSearch, radioTop, radioMeta, radioStreams,
+  archiveSearch, archiveMeta, archiveStreams,
+} from "./sources";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -55,9 +60,9 @@ const ADDON_BACKGROUND =
 // Stremio Manifest
 const manifest = {
   id: "org.kablekillers.music",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Kable Killers Music",
-  description: "Kable Killers Music lets you search and stream music right inside Kable Killers (and any Stremio-compatible app). Search for any track, see artwork and details, and hit play.",
+  description: "Search and stream music right inside Kable Killers: SoundCloud, Audius, 30,000+ live radio stations and Internet Archive concerts.",
   logo: ADDON_LOGO,
   icon: ADDON_LOGO,
   background: ADDON_BACKGROUND,
@@ -67,11 +72,29 @@ const manifest = {
     {
       type: "music",
       id: "kablekillers_music_search",
-      name: "Kable Killers Music",
+      name: "SoundCloud",
+      extra: [{ name: "search", isRequired: true }]
+    },
+    {
+      type: "music",
+      id: "kk_audius",
+      name: "Audius",
+      extra: [{ name: "search", isRequired: false }]
+    },
+    {
+      type: "music",
+      id: "kk_radio",
+      name: "Live Radio",
+      extra: [{ name: "search", isRequired: false }]
+    },
+    {
+      type: "music",
+      id: "kk_archive",
+      name: "Concerts & Archive",
       extra: [{ name: "search", isRequired: true }]
     }
   ],
-  idPrefixes: ["sc:"]
+  idPrefixes: ["sc:", "audius:", "radio:", "ia:"]
 };
 
 const builder = new addonBuilder(manifest);
@@ -124,6 +147,11 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
   console.log(`[KK Music] Catalog Request: type=${type}, id=${id}, search="${extra?.search || ''}"`);
   
   if (type === "music") {
+    const q = (extra?.search || "").trim();
+    if (id === "kk_audius") return { metas: q ? await audiusSearch(q) : await audiusTrending(), cacheMaxAge: 3600 };
+    if (id === "kk_radio") return { metas: q ? await radioSearch(q) : await radioTop(), cacheMaxAge: 3600 };
+    if (id === "kk_archive") return { metas: q ? await archiveSearch(q) : [], cacheMaxAge: 3600 };
+
     let items = [];
     if (id === "kablekillers_music_search" && extra?.search) {
       items = await searchTracks(extra.search);
@@ -145,6 +173,10 @@ builder.defineCatalogHandler(async ({ type, id, extra }: any) => {
 
 builder.defineMetaHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Meta Request: type=${type}, id=${id}`);
+  const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audius:")) return { meta: await audiusMeta(rest) };
+  if (id.startsWith("radio:")) return { meta: await radioMeta(rest) };
+  if (id.startsWith("ia:")) return { meta: await archiveMeta(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
     console.log(`[KK Music] \uD83D\uDD0D Fetching metadata for SoundCloud track ID: ${trackId}`);
@@ -177,6 +209,10 @@ builder.defineMetaHandler(async ({ type, id }: any) => {
 
 builder.defineStreamHandler(async ({ type, id }: any) => {
   console.log(`[KK Music] \uD83D\uDFE2 Stream Request: type=${type}, id=${id}`);
+  const rest = id.slice(id.indexOf(":") + 1);
+  if (id.startsWith("audius:")) return { streams: await audiusStreams(rest) };
+  if (id.startsWith("radio:")) return { streams: await radioStreams(rest) };
+  if (id.startsWith("ia:")) return { streams: await archiveStreams(rest) };
   if (type === "music" && id.startsWith("sc:")) {
     const trackId = id.split(":")[1];
     const clientId = await getSCClientId();
@@ -210,7 +246,7 @@ builder.defineStreamHandler(async ({ type, id }: any) => {
         console.log(`[KK Music] \u2728 SUCCESS: Resolved direct stream URL: ${directUrl.substring(0, 100)}...`);
         return {
           streams: [{
-            name: "Kable Killers Music",
+            name: "KK Music\nSoundCloud",
             title: "MP3 (128kbps)",
             url: directUrl,
             behaviorHints: {
@@ -237,7 +273,7 @@ builder.defineStreamHandler(async ({ type, id }: any) => {
         if (resolveResponse.data.url) {
           return {
             streams: [{
-              name: "Kable Killers Music",
+              name: "KK Music\nSoundCloud",
               title: "MP3 (128kbps)",
               url: resolveResponse.data.url,
               behaviorHints: {

@@ -4,6 +4,15 @@
 
 Kable Killers Music is a music addon for the Kable Killers app (and any Stremio-compatible app). It lets you search for and stream music from SoundCloud right inside the app.
 
+## Music sources
+
+| Source | What you get | Rows in the app |
+| --- | --- | --- |
+| SoundCloud | Millions of user-uploaded tracks | Search results |
+| Audius | Full tracks from independent artists | Trending + search results |
+| Live Radio (Radio Browser) | 30,000+ live internet radio stations; search by name or genre (e.g. "country", "ESPN", "jazz") | Top US stations + search results |
+| Concerts & Archive (Internet Archive) | Live concert recordings, old-time radio, public-domain music; each item lists every track | Search results |
+
 ## Features
 
 - **Music search**: find tracks straight from the Kable Killers search bar.
@@ -45,6 +54,8 @@ This repo includes a `render.yaml` blueprint.
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string (required) |
 | `PORT` | Port to run on (default 5000) |
+| `AUDIUS_API_KEY` | Optional: free key from api.audius.co/plans if Audius starts requiring one |
+| `SC_CLIENT_ID` | Optional: fixed SoundCloud client ID (otherwise fetched automatically) |
 | `ADDON_LOGO_URL` | Optional: custom logo URL for the addon manifest |
 | `ADDON_BACKGROUND_URL` | Optional: custom background URL for the addon manifest |
 
