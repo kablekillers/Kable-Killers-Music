@@ -341,7 +341,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Invalid album identifier" });
     }
     const tracks = await audiusAlbumTracks(identifier);
-    const base = (process.env.PUBLIC_BASE_URL || "https://kable-killers-music.onrender.com").replace(/\\/$/, "");
+    const base = (process.env.PUBLIC_BASE_URL || "https://kable-killers-music.onrender.com").replace(new RegExp("/$"), "");
     return res.json({ id: `audiuspl:${identifier}`, tracks: tracks.map(t => ({
       ...t,
       url: `${base}/api/music/audius-track/${encodeURIComponent(String(t.trackId))}`,
