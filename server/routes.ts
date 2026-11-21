@@ -9,6 +9,7 @@ import {
   archiveSearch, archiveMeta, archiveStreams, archiveAlbumTracks,
 } from "./sources";
 import { commonsSearch, commonsMeta, commonsStreams } from "./commons";
+import { searchYouTubeMusic } from "./youtube";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -363,6 +364,22 @@ export async function registerRoutes(
     } catch (e: any) {
       console.error("[KK Music] Audius track redirect error:", e?.message);
       return res.sendStatus(502);
+    }
+  });
+
+  // Search YouTube through its official Data API. Video playback stays in the
+  // official embedded YouTube player in Android (not a Stremio audio stream).
+  app.get("/api/music/youtube/search", async (req, res) => {
+    const query = String(req.query.q || "").trim().slice(0, 160);
+    if (!query) return res.json({ results: [] });
+    if (!process.env.YOUTUBE_API_KEY?.trim()) {
+      return res.status(503).json({ error: "YouTube search is not configured" });
+    }
+    try {
+      return res.json({ results: await searchYouTubeMusic(query) });
+    } catch (e: any) {
+      console.error("[KK Music] YouTube search:", e?.message);
+      return res.status(502).json({ error: "YouTube search unavailable" });
     }
   });
 
